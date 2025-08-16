@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Malta Pastizzerias Growth Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+        .year-display {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .count-display {
+            font-size: 16px;
+        }
+        .pastizzeria-marker {
+            border-radius: 50%;
+            width: 10px;
+            height: 10px;
+            background-color: #ff6b6b;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 0 rgba(255, 107, 107, 0.4);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(255, 107, 107, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 107, 107, 0);
+            }
+        }
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="info-panel">
+                    <div class="year-display">Year: <span id="year">2003</span></div>
+        <div class="count-display">Pastizzerias: <span id="count">0</span></div>
+    </div>
+    <div class="legend">
+        <h3 style="margin-top: 0;">Legend</h3>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #ff6b6b;"></div>
+            <div>Pastizzeria</div>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px;">
+            <p>Data shows licenses per 1000 population:</p>
+            <ul style="padding-left: 15px; margin-top: 5px;">
+                <li>2003-2004: 0.00</li>
+                <li>2005-2006: 0.01</li>
+                <li>2007: 0.09</li>
+                <li>2008: 0.10</li>
+                <li>2009: 0.12</li>
+                <li>2010: 0.13</li>
+                <li>2011: 0.16</li>
+                <li>2012: 0.18</li>
+                <li>2013: 0.21</li>
+                <li>2014+: Projected growth</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+
+        // one big stipulation with this program is you have to convert from licenses per 1000
+        // to actual # of pastizzerias and back, which is quite taxing
+
+        // init map on Malta
+        const map = L.map('map').setView([35.9375, 14.3754], 11);
+
+        // OpenStreetMap attribution
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        const title = L.control({position: 'topleft'});
+        title.onAdd = function(map) {
+            const div = L.DomUtil.create('div', 'info-panel');
+            div.innerHTML = '<h2 style="margin: 0; padding: 5px;">Growth of Pastizzerias in Malta</h2><p style="margin: 0; padding: 5px;">Based on licenses per 1000 population</p>';
+            return div;
+        };
+        title.addTo(map);
+
+        // Define bounds (crude)
+        const maltaBounds = {
+            north: 36.0822,
+            south: 35.8091,
+            east: 14.5765,
+            west: 14.1836
+        };
+
+        // pop centers with weights (higher weight = more likely to get a pastizzeria)
+        const populationCenters = [
+            { name: "Valletta", lat: 35.8989, lng: 14.5146, weight: 10 },
+            { name: "Sliema", lat: 35.9125, lng: 14.5019, weight: 9 },
+            { name: "St. Julian's", lat: 35.9180, lng: 14.4898, weight: 8 },
+            { name: "Birkirkara", lat: 35.8972, lng: 14.4611, weight: 7 },
+            { name: "Qormi", lat: 35.8764, lng: 14.4689, weight: 6 },
+            { name: "Mosta", lat: 35.9097, lng: 14.4261, weight: 5 },
+            { name: "Żabbar", lat: 35.8761, lng: 14.5350, weight: 4 },
+            { name: "San Ġwann", lat: 35.9058, lng: 14.4789, weight: 4 },
+            { name: "Rabat", lat: 35.8825, lng: 14.3983, weight: 3 },
+            { name: "Żejtun", lat: 35.8558, lng: 14.5333, weight: 3 },
+            { name: "Marsaxlokk", lat: 35.8414, lng: 14.5453, weight: 3 },
+            { name: "Mdina", lat: 35.8867, lng: 14.4033, weight: 2 },
+            { name: "Gozo (Victoria)", lat: 36.0444, lng: 14.2417, weight: 3 },
+            { name: "Marsaskala", lat: 35.8606, lng: 14.5628, weight: 3 },
+            { name: "Mellieħa", lat: 35.9564, lng: 14.3628, weight: 2 }
+        ];
+
+        // total weight for prob calculation
+        const totalWeight = populationCenters.reduce((sum, center) => sum + center.weight, 0);
+
+        // generate random point
+        function generateBiasedRandomPoint() {
+            // decide whether to use a population center (80%) or completely random (20%)
+            const usePopulationCenter = Math.random() < 0.8;
+            
+            if (usePopulationCenter) {
+                // choose pop center based on weight
+                let randomWeight = Math.random() * totalWeight;
+                let chosenCenter = null;
+                
+                for (const center of populationCenters) {
+                    randomWeight -= center.weight;
+                    if (randomWeight <= 0) {
+                        chosenCenter = center;
+                        break;
+                    }
+                }
+                
+                // offset exact position relative to pop center
+                const latOffset = (Math.random() - 0.5) * 0.02;
+                const lngOffset = (Math.random() - 0.5) * 0.02;
+                
+                return {
+                    lat: chosenCenter.lat + latOffset,
+                    lng: chosenCenter.lng + lngOffset,
+                    centerName: chosenCenter.name
+                };
+            } else {
+                // the 20% chance of generating completely random point (within Malta's bounds)
+                const lat = maltaBounds.south + Math.random() * (maltaBounds.north - maltaBounds.south);
+                const lng = maltaBounds.west + Math.random() * (maltaBounds.east - maltaBounds.west);
+                
+                return { lat, lng, centerName: "Rural area" };
+            }
+        }
+
+        // custom pulsing icon for pastizzerias
+        const pastizzeriaIcon = L.divIcon({
+            className: 'pastizzeria-marker',
+            iconSize: [10, 10]
+        });
+
+        // array to store pastizzerias
+        const pastizzerias = [];
+        let currentYear = 2003;
+        const yearEl = document.getElementById('year');
+        const countEl = document.getElementById('count');
+
+        // based on actual data
+        const startYear = 2003;
+        const endYear = 2025;
+        
+        const historicalData = {
+            2003: 0,
+            2004: 0,
+            2005: 0.01,
+            2006: 0.01,
+            2007: 0.09,
+            2008: 0.1,
+            2009: 0.12,
+            2010: 0.13,
+            2011: 0.16,
+            2012: 0.18,
+            2013: 0.21
+        };
+        
+        const maltaPopulation = 500000; // approximate pop (for growth purposes)
+        // for predictions
+        for (let year = 2014; year <= endYear; year++) {
+            const previousYear = year - 1;
+            const growthRate = 1.12; // assumes 12% annual growth after 2013
+            historicalData[year] = historicalData[previousYear] * growthRate;
+        }
+        
+        // add pastizzerias for a given year
+        function addPastizzeriasForYear(year) {
+            // get historical data for current and previous year
+            const currentRate = historicalData[year] || 0;
+            const prevRate = historicalData[year-1] || 0;
+            
+            // calculate how many new pastizzerias to add
+            const currentTotal = Math.round((currentRate * maltaPopulation) / 1000);
+            const prevTotal = Math.round((prevRate * maltaPopulation) / 1000);
+            const newCount = Math.max(0, currentTotal - prevTotal);
+            
+            for (let i = 0; i < newCount; i++) {
+                setTimeout(() => {
+                    const point = generateBiasedRandomPoint();
+                    
+                    // create pin for pastizzeria
+                    const marker = L.marker([point.lat, point.lng], { icon: pastizzeriaIcon })
+                        .addTo(map)
+                        .bindPopup(`<b>Pastizzeria</b><br>Established: ${year}<br>Location: ${point.centerName}`);
+                    
+                    //add to array
+                    pastizzerias.push({
+                        marker: marker,
+                        year: year,
+                        location: point.centerName
+                    });
+                    
+                    // update visual count
+                    countEl.textContent = pastizzerias.length;
+                }, i * 300);
+            }
+        }
+
+        // step simulation
+        function advanceSimulation() {
+            if (currentYear <= endYear) {
+                yearEl.textContent = currentYear;
+                addPastizzeriasForYear(currentYear);
+                currentYear++;
+                
+                // small timeout, then step again
+                setTimeout(advanceSimulation, 1500);
+            }
+        }
+
+        // start simulation!
+        setTimeout(advanceSimulation, 1000);
+    </script>
+</body>
+</html>
